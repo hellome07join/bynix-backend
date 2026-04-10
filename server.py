@@ -18,7 +18,8 @@ import httpx
 import socketio
 import asyncio
 import base64
-from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContent
+# OpenAI for KYC verification (AWS deployment - no emergentintegrations)
+from openai import OpenAI
 from tarspay_service import tarspay_service, fetch_live_exchange_rate, get_current_rate, get_rate_for_currency, TARSPAY_CHANNELS, ALL_CHANNELS
 from email_service import send_verification_otp, verify_otp as verify_email_otp, resend_otp
 from nowpayments_service import nowpayments_service, create_usdt_payout, check_payout_status, validate_trc20_address
@@ -3285,16 +3286,15 @@ async def submit_kyc_documents(submission: KYCDocumentSubmission, authorization:
                 "message": "This ID number is already registered with another account. Each document can only be used once."
             }
         
-        # Get the Emergent LLM key
-        llm_key = os.environ.get('EMERGENT_LLM_KEY')
-        if not llm_key:
+        # Get the OpenAI API key (use OPENAI_API_KEY for AWS deployment)
+        openai_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('EMERGENT_LLM_KEY')
+        if not openai_key:
             raise HTTPException(status_code=500, detail="AI verification service not configured")
         
-        # Initialize the AI chat for document verification
-        chat = LlmChat(
-            api_key=llm_key,
-            session_id=f"kyc_verify_{user.user_id}_{uuid.uuid4().hex[:8]}",
-            system_message="""You are a professional KYC document verification AI. Your job is to analyze identity documents and verify:
+        # Initialize OpenAI client for document verification
+        openai_client = OpenAI(api_key=openai_key)
+        
+        system_message = """You are a professional KYC document verification AI. Your job is to analyze identity documents and verify:
 1. If the document is a valid government-issued ID (Passport, National ID Card, or Driver's License)
 2. Which country issued the document
 3. If the document appears authentic (not obviously fake, edited, or a screenshot)
@@ -3319,7 +3319,6 @@ IMPORTANT:
 - If the name on document doesn't match the provided name, set is_valid_document to false
 - If you cannot read the document clearly, set is_valid_document to false
 - Be strict about authenticity"""
-        ).with_model("openai", "gpt-4o")
         
         # Create the verification prompt with personal info to match
         prompt = f"""Please analyze this identity document and verify the information:
@@ -3338,20 +3337,34 @@ YOUR TASK:
 
 Analyze the image carefully and respond with the JSON verification result."""
 
-        # Create UserMessage with image as FileContent
-        # The emergentintegrations library expects just the base64 data without data URL prefix
-        file_content = FileContent(
-            content_type="image/png",
-            file_content_base64=submission.front_image_base64
-        )
-        user_message = UserMessage(
-            text=prompt,
-            file_contents=[file_content]
-        )
+        # Prepare image for OpenAI Vision API
+        image_data = submission.front_image_base64
+        if image_data.startswith('data:'):
+            # Extract base64 part from data URL
+            image_data = image_data.split(',')[1] if ',' in image_data else image_data
         
-        # Send message with image
+        # Send message with image using OpenAI Vision API
         try:
-            response = await chat.send_message(user_message)
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{image_data}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1000
+            )
+            ai_response_text = response.choices[0].message.content
         except Exception as ai_error:
             # If AI service fails, provide a fallback response for testing
             logging.error(f"AI service error: {str(ai_error)}")
@@ -3399,8 +3412,8 @@ Analyze the image carefully and respond with the JSON verification result."""
         # Parse AI response
         import json
         try:
-            # Extract JSON from response
-            response_text = response.strip()
+            # Extract JSON from response - use ai_response_text from OpenAI
+            response_text = ai_response_text.strip()
             if "```json" in response_text:
                 response_text = response_text.split("```json")[1].split("```")[0].strip()
             elif "```" in response_text:
