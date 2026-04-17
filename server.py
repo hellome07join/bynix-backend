@@ -5537,35 +5537,33 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
         
-        # ========== ULTRA SLOW SMOOTH MOVEMENT (Pocket Option Style) ==========
-        volatility = base_price * 0.0000006  # ULTRA TINY - almost imperceptible per tick
+        # ========== POCKET OPTION EXACT STYLE - GRADUAL SMOOTH MOVEMENT ==========
+        # Price moves in ONE direction for extended periods, very gradually
+        volatility = base_price * 0.0000003  # Extremely tiny per-tick change
         
-        tick_second = tick_time % 86400  # Seconds since midnight
+        tick_second = tick_time % 86400
         
-        # Very slow amplitude changes
-        amplitude_cycle = (tick_time // 180) % 100  # Changes every 3 minutes
-        random.seed(seed + amplitude_cycle)
-        amp_variation = 0.7 + random.random() * 0.6
+        # Direction changes every 60-180 seconds (not every few seconds)
+        direction_period = 120  # 2 minutes average trend
+        direction_cycle = tick_time // direction_period
         
-        # Slow phase shifts
-        phase_shift = (tick_time // 90) * 0.15 + (seed % 500)
+        # Use hash to determine direction for this cycle
+        random.seed(seed + direction_cycle)
+        trend_direction = 1 if random.random() > 0.5 else -1
         
-        # ULTRA SLOW wave frequencies (creates very gradual movement)
-        fast_wave = math.sin((tick_second * 0.008) + phase_shift) * 0.3 * amp_variation
-        medium_wave = math.sin((tick_second * 0.003) + phase_shift * 0.4) * 0.4 * (1.4 - amp_variation * 0.25)
-        slow_wave = math.sin((tick_second * 0.0008) + phase_shift * 0.15) * 0.3
+        # Smooth sine envelope for gradual acceleration/deceleration within trend
+        cycle_position = (tick_time % direction_period) / direction_period
+        trend_strength = math.sin(cycle_position * math.pi)  # 0 -> 1 -> 0 over cycle
         
-        # Combine for ultra smooth directional movement
-        trend_direction = fast_wave + medium_wave + slow_wave
+        # Very slow underlying wave for natural variation
+        slow_wave = math.sin(tick_second * 0.0005) * 0.3
         
-        # Mean reversion keeps price stable
-        mean_reversion = (base_price - price) * 0.0005
-        change = (trend_direction * volatility * 1.5) + mean_reversion
+        # Calculate smooth change
+        change = trend_direction * trend_strength * volatility * 2 + slow_wave * volatility
         
-        # Tiny noise
-        random.seed(seed + tick_time)
-        noise = (random.random() - 0.5) * volatility * 0.08
-        change += noise
+        # Gentle mean reversion to keep price stable long-term
+        mean_reversion = (base_price - price) * 0.0003
+        change += mean_reversion
         
         open_price = price
         close_price = open_price + change
@@ -5822,35 +5820,28 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     random.seed(now + hash(symbol_key))
     
     base_price = last_tick["close"]
-    volatility = base_price * 0.0000008  # ULTRA TINY volatility - 0.00008%
+    volatility = base_price * 0.0000004  # Extremely small change per tick
     
-    # ========== ULTRA SLOW SMOOTH MOVEMENT (Pocket Option Style) ==========
-    current_second = now % 86400  # Seconds since midnight
+    # ========== POCKET OPTION EXACT STYLE - GRADUAL DIRECTIONAL MOVEMENT ==========
+    current_second = now % 86400
     
-    # Very slow amplitude changes (every 3-5 minutes)
-    amplitude_cycle = (now // 200) % 100
-    random.seed(hash(symbol_key) + amplitude_cycle)
-    amp_variation = 0.7 + random.random() * 0.6  # 0.7 to 1.3x amplitude
+    # Direction changes every 90-180 seconds for smooth trending
+    direction_period = 120  # 2 minute trend cycles
+    direction_cycle = now // direction_period
     
-    # Slow phase shifts
-    phase_shift = (now // 100) * 0.2 + (hash(symbol_key) % 500)
+    # Determine trend direction for this cycle
+    random.seed(hash(symbol_key) + direction_cycle)
+    trend_direction = 1 if random.random() > 0.5 else -1
     
-    # ULTRA SLOW wave frequencies (10x slower than before)
-    # These create very gradual, smooth movement
-    fast_wave = math.sin((current_second * 0.012) + phase_shift) * 0.3 * amp_variation
-    medium_wave = math.sin((current_second * 0.004) + phase_shift * 0.5) * 0.4 * (1.5 - amp_variation * 0.3)
-    slow_wave = math.sin((current_second * 0.001) + phase_shift * 0.2) * 0.3
+    # Smooth acceleration curve within the trend (gradual start, peak, gradual end)
+    cycle_position = (now % direction_period) / direction_period
+    trend_strength = math.sin(cycle_position * math.pi)  # Creates smooth 0->1->0 envelope
     
-    # Combine waves - very smooth directional movement
-    combined_direction = fast_wave + medium_wave + slow_wave
+    # Very subtle underlying wave
+    slow_wave = math.sin(current_second * 0.0003) * 0.2
     
-    # Ultra small change for smooth appearance
-    change = combined_direction * volatility * 2
-    
-    # Tiny noise for natural micro-movement
-    random.seed(now + hash(symbol_key))
-    noise = (random.random() - 0.5) * volatility * 0.1
-    change += noise
+    # Calculate the smooth, directional change
+    change = trend_direction * trend_strength * volatility * 1.5 + slow_wave * volatility * 0.5
     
     # ========== PER-USER PRICE MANIPULATION ==========
     # Each user's active trade gets price manipulation based on their predetermined_outcome
