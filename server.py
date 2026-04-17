@@ -5536,7 +5536,7 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
         tick_time = now - i
         
         # Use much smaller volatility to prevent drift
-        volatility = base_price * 0.00002  # Reduced from 0.00008
+        volatility = base_price * 0.000005  # Ultra smooth - 0.0005% volatility per tick
         
         # Mean reversion - pull price back towards base
         mean_reversion = (base_price - price) * 0.001
@@ -5795,7 +5795,7 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     random.seed(now + hash(symbol_key))
     
     base_price = last_tick["close"]
-    volatility = base_price * 0.00003  # Reduced for smoother, more realistic candles
+    volatility = base_price * 0.000008  # Ultra smooth real-time tick movement
     
     # Default random change
     change = (random.random() - 0.5) * volatility * 2
