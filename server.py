@@ -5540,13 +5540,28 @@ def generate_server_chart_data(symbol: str) -> list:
     
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
-        volatility = price * 0.00008
-        change = (random.random() - 0.5) * volatility * 2
+        
+        # Use much smaller volatility to prevent drift
+        volatility = base_price * 0.00002  # Reduced from 0.00008
+        
+        # Mean reversion - pull price back towards base
+        mean_reversion = (base_price - price) * 0.001
+        change = (random.random() - 0.5) * volatility * 2 + mean_reversion
         
         open_price = price
         close_price = open_price + change
-        high_price = max(open_price, close_price) + abs((random.random() - 0.5) * volatility)
-        low_price = min(open_price, close_price) - abs((random.random() - 0.5) * volatility)
+        
+        # Clamp price within reasonable range (±5% of base)
+        max_price = base_price * 1.05
+        min_price = base_price * 0.95
+        close_price = max(min_price, min(max_price, close_price))
+        
+        high_price = max(open_price, close_price) + abs((random.random() - 0.5) * volatility * 0.5)
+        low_price = min(open_price, close_price) - abs((random.random() - 0.5) * volatility * 0.5)
+        
+        # Ensure high/low are within bounds
+        high_price = min(high_price, max_price)
+        low_price = max(low_price, min_price)
         
         ticks.append({
             "time": tick_time,
@@ -5566,6 +5581,14 @@ def generate_server_chart_data(symbol: str) -> list:
 # In-memory chart data cache (avoid MongoDB 16MB document limit)
 chart_data_memory_cache = {}
 chart_data_cache_timestamps = {}
+
+@api_router.post("/chart/clear-cache")
+async def clear_chart_cache():
+    """Clear all chart data cache to regenerate fresh data"""
+    global chart_data_memory_cache, chart_data_cache_timestamps
+    chart_data_memory_cache = {}
+    chart_data_cache_timestamps = {}
+    return {"success": True, "message": "Chart cache cleared"}
 
 def aggregate_ticks_to_candles(ticks: list, interval_seconds: int) -> list:
     """Aggregate raw ticks into OHLC candles based on interval"""
