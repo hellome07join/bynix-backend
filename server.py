@@ -5505,15 +5505,14 @@ def get_base_price(symbol: str) -> float:
     
     return 1.0850
 
-def generate_server_chart_data(symbol: str) -> list:
+def generate_server_chart_data(symbol: str, days: int = 7) -> list:
     """Generate chart data on the server (consistent across all devices)
     
-    For 30 days of historical data across all timeframes:
-    - 30 days = 2,592,000 seconds
-    - 1m timeframe: 43,200 candles needed
-    - 4h timeframe: 180 candles needed
+    Args:
+        symbol: Trading pair symbol
+        days: Number of days of historical data (1-30, default 7)
     
-    We generate 1 tick per second for 30 days = 2,592,000 ticks
+    Lazy loading: Initial load is 7 days, user can scroll to load up to 30 days
     """
     import hashlib
     
@@ -5527,17 +5526,9 @@ def generate_server_chart_data(symbol: str) -> list:
     
     price = base_price
     
-    # Generate 604800 ticks (7 days of 1-second data)
-    # 7 days × 24 hours × 60 minutes × 60 seconds = 604,800 ticks
-    # This gives us:
-    # - 10,080 candles at 1m interval
-    # - 2,016 candles at 5m interval
-    # - 672 candles at 15m interval  
-    # - 336 candles at 30m interval
-    # - 168 candles at 1h interval
-    # - 42 candles at 4h interval
-    # This is enough for smooth charts while loading 4x faster
-    TOTAL_TICKS = 604800  # 7 days
+    # Calculate total ticks based on requested days
+    # days × 24 hours × 60 minutes × 60 seconds
+    TOTAL_TICKS = days * 24 * 60 * 60
     
     # Generate ticks from (now - TOTAL_TICKS) to (now - 1)
     # The last tick is 1 second ago, so real-time tick at 'now' will update current candle
@@ -5639,13 +5630,19 @@ def aggregate_ticks_to_candles(ticks: list, interval_seconds: int) -> list:
     return candles
 
 @api_router.get("/chart/data/{symbol}")
-async def get_chart_data(symbol: str, interval: str = "1m"):
+async def get_chart_data(symbol: str, interval: str = "1m", days: int = 7):
     """Get chart data for a symbol - returns pre-aggregated candles based on interval
     
     Interval options: 15s, 1m, 5m, 15m, 30m, 1h, 4h
+    Days: Number of days of historical data (1-30, default 7)
     Returns candles instead of raw ticks for better frontend performance
+    
+    Lazy loading: Start with 7 days, load more (up to 30) when user scrolls back
     """
     global chart_data_memory_cache, chart_data_cache_timestamps
+    
+    # Clamp days to valid range
+    days = max(1, min(30, days))
     
     # Interval mapping
     interval_map = {
@@ -5662,38 +5659,43 @@ async def get_chart_data(symbol: str, interval: str = "1m"):
     # Normalize symbol
     symbol_key = symbol.replace("/", "_").replace(" ", "_").upper()
     
+    # Cache key includes days for different data sizes
+    cache_key = f"{symbol_key}_{days}d"
+    
     # Check in-memory cache for raw ticks first
-    if symbol_key not in chart_data_memory_cache:
-        # Generate new raw data (864,000 ticks for 10 days)
-        print(f"[CHART] Generating new data for {symbol_key}...")
-        ticks = generate_server_chart_data(symbol)
-        chart_data_memory_cache[symbol_key] = ticks
-        chart_data_cache_timestamps[symbol_key] = datetime.now(timezone.utc)
-        print(f"[CHART] Generated {len(ticks)} ticks for {symbol_key}")
+    if cache_key not in chart_data_memory_cache:
+        # Generate new raw data
+        print(f"[CHART] Generating {days}-day data for {symbol_key}...")
+        ticks = generate_server_chart_data(symbol, days=days)
+        chart_data_memory_cache[cache_key] = ticks
+        chart_data_cache_timestamps[cache_key] = datetime.now(timezone.utc)
+        print(f"[CHART] Generated {len(ticks)} ticks for {cache_key}")
     else:
-        cache_time = chart_data_cache_timestamps.get(symbol_key, datetime.min.replace(tzinfo=timezone.utc))
+        cache_time = chart_data_cache_timestamps.get(cache_key, datetime.min.replace(tzinfo=timezone.utc))
         age = datetime.now(timezone.utc) - cache_time
         
         # Refresh cache if older than 30 minutes
         if age.total_seconds() > 1800:
-            print(f"[CHART] Refreshing data for {symbol_key}...")
-            ticks = generate_server_chart_data(symbol)
-            chart_data_memory_cache[symbol_key] = ticks
-            chart_data_cache_timestamps[symbol_key] = datetime.now(timezone.utc)
+            print(f"[CHART] Refreshing {days}-day data for {symbol_key}...")
+            ticks = generate_server_chart_data(symbol, days=days)
+            chart_data_memory_cache[cache_key] = ticks
+            chart_data_cache_timestamps[cache_key] = datetime.now(timezone.utc)
     
-    ticks = chart_data_memory_cache[symbol_key]
+    ticks = chart_data_memory_cache[cache_key]
     
     # Aggregate ticks into candles based on requested interval
     candles = aggregate_ticks_to_candles(ticks, interval_seconds)
     
-    print(f"[CHART] Serving {symbol_key} interval={interval}: {len(candles)} candles from {len(ticks)} ticks")
+    print(f"[CHART] Serving {cache_key} interval={interval}: {len(candles)} candles from {len(ticks)} ticks")
     
     return {
         "symbol": symbol,
         "interval": interval,
+        "days": days,
         "ticks": candles,  # Return candles as "ticks" for frontend compatibility
         "candle_count": len(candles),
-        "last_updated": chart_data_cache_timestamps.get(symbol_key, datetime.now(timezone.utc)).isoformat()
+        "max_days_available": 30,
+        "last_updated": chart_data_cache_timestamps.get(cache_key, datetime.now(timezone.utc)).isoformat()
     }
 
 @api_router.post("/chart/tick/{symbol}")
