@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import os
+import math
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
@@ -5515,6 +5516,7 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
     Lazy loading: Initial load is 7 days, user can scroll to load up to 30 days
     """
     import hashlib
+    import math
     
     base_price = get_base_price(symbol)
     ticks = []
@@ -5535,23 +5537,39 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
         
-        # Use much smaller volatility to prevent drift
-        volatility = base_price * 0.000005  # Ultra smooth - 0.0005% volatility per tick
+        # ========== POCKET OPTION STYLE SMOOTH TRENDING ==========
+        volatility = base_price * 0.000003  # Very smooth movement
         
-        # Mean reversion - pull price back towards base
-        mean_reversion = (base_price - price) * 0.001
-        change = (random.random() - 0.5) * volatility * 2 + mean_reversion
+        # Use time-based sine waves for smooth trending (instead of random)
+        tick_second = tick_time % 86400  # Seconds since midnight of that tick
+        
+        # Multiple sine waves create natural-looking price movement
+        fast_wave = math.sin(tick_second * 0.12) * 0.35
+        medium_wave = math.sin(tick_second * 0.04) * 0.4
+        slow_wave = math.sin(tick_second * 0.012) * 0.25
+        
+        # Combine for smooth directional movement
+        trend_direction = fast_wave + medium_wave + slow_wave
+        
+        # Apply trend-based change with mean reversion to base price
+        mean_reversion = (base_price - price) * 0.0008
+        change = (trend_direction * volatility * 2.5) + mean_reversion
+        
+        # Add tiny noise for realism
+        noise = (random.random() - 0.5) * volatility * 0.15
+        change += noise
         
         open_price = price
         close_price = open_price + change
         
-        # Clamp price within reasonable range (±5% of base)
-        max_price = base_price * 1.05
-        min_price = base_price * 0.95
+        # Clamp price within reasonable range (±3% of base for tighter control)
+        max_price = base_price * 1.03
+        min_price = base_price * 0.97
         close_price = max(min_price, min(max_price, close_price))
         
-        high_price = max(open_price, close_price) + abs((random.random() - 0.5) * volatility * 0.5)
-        low_price = min(open_price, close_price) - abs((random.random() - 0.5) * volatility * 0.5)
+        # Very small high/low variance for smooth candles
+        high_price = max(open_price, close_price) + abs(volatility * 0.2)
+        low_price = min(open_price, close_price) - abs(volatility * 0.2)
         
         # Ensure high/low are within bounds
         high_price = min(high_price, max_price)
@@ -5568,11 +5586,12 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
         price = close_price
     
     # Add final tick at current timestamp to ensure current candle exists
+    final_volatility = base_price * 0.000003
     ticks.append({
         "time": now,
         "open": round(price, 6),
-        "high": round(price + abs((random.random() - 0.5) * volatility * 0.3), 6),
-        "low": round(price - abs((random.random() - 0.5) * volatility * 0.3), 6),
+        "high": round(price + abs(final_volatility * 0.2), 6),
+        "low": round(price - abs(final_volatility * 0.2), 6),
         "close": round(price, 6)
     })
     
@@ -5795,10 +5814,31 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     random.seed(now + hash(symbol_key))
     
     base_price = last_tick["close"]
-    volatility = base_price * 0.000008  # Ultra smooth real-time tick movement
+    volatility = base_price * 0.000005  # Ultra smooth real-time tick movement
     
-    # Default random change
-    change = (random.random() - 0.5) * volatility * 2
+    # ========== POCKET OPTION STYLE SMOOTH TRENDING ==========
+    # Instead of random up/down, create smooth trending movement
+    # Price continues in same direction with occasional smooth reversals
+    
+    # Use time-based trend determination (changes every 15-45 seconds)
+    trend_cycle = 30  # Average seconds per trend
+    current_second = now % 86400  # Seconds since midnight
+    
+    # Create smooth sine-wave based movement with multiple frequencies
+    # This creates natural-looking price waves
+    fast_wave = math.sin(current_second * 0.15) * 0.4  # Fast small waves
+    medium_wave = math.sin(current_second * 0.05) * 0.35  # Medium waves  
+    slow_wave = math.sin(current_second * 0.015) * 0.25  # Slow trend waves
+    
+    # Combine waves for natural movement (-1 to +1 range)
+    combined_direction = fast_wave + medium_wave + slow_wave
+    
+    # Apply smooth change in the trending direction
+    change = combined_direction * volatility * 3
+    
+    # Add tiny random noise for realism (very small)
+    noise = (random.random() - 0.5) * volatility * 0.2
+    change += noise
     
     # ========== PER-USER PRICE MANIPULATION ==========
     # Each user's active trade gets price manipulation based on their predetermined_outcome
