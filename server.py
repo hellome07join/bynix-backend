@@ -5508,12 +5508,12 @@ def get_base_price(symbol: str) -> float:
 def generate_server_chart_data(symbol: str) -> list:
     """Generate chart data on the server (consistent across all devices)
     
-    For 10 days of historical data across all timeframes:
-    - 10 days = 864,000 seconds
-    - 1m timeframe: 14,400 candles needed
-    - 4h timeframe: 60 candles needed
+    For 30 days of historical data across all timeframes:
+    - 30 days = 2,592,000 seconds
+    - 1m timeframe: 43,200 candles needed
+    - 4h timeframe: 180 candles needed
     
-    We generate 1 tick per second for 10 days = 864,000 ticks
+    We generate 1 tick per second for 30 days = 2,592,000 ticks
     """
     import hashlib
     
@@ -5527,16 +5527,16 @@ def generate_server_chart_data(symbol: str) -> list:
     
     price = base_price
     
-    # Generate 864000 ticks (10 days of 1-second data)
-    # 10 days × 24 hours × 60 minutes × 60 seconds = 864,000 ticks
+    # Generate 2592000 ticks (30 days of 1-second data)
+    # 30 days × 24 hours × 60 minutes × 60 seconds = 2,592,000 ticks
     # This gives us:
-    # - 14,400 candles at 1m interval
-    # - 2,880 candles at 5m interval
-    # - 960 candles at 15m interval  
-    # - 480 candles at 30m interval
-    # - 240 candles at 1h interval
-    # - 60 candles at 4h interval
-    TOTAL_TICKS = 864000  # 10 days
+    # - 43,200 candles at 1m interval
+    # - 8,640 candles at 5m interval
+    # - 2,880 candles at 15m interval  
+    # - 1,440 candles at 30m interval
+    # - 720 candles at 1h interval
+    # - 180 candles at 4h interval
+    TOTAL_TICKS = 2592000  # 30 days
     
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
