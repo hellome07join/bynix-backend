@@ -5821,6 +5821,9 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                 # Use very small, natural-looking increments
                 min_profit_diff = entry_price * 0.00005  # Just 0.005% above/below entry (very small)
                 
+                # Use deterministic random for manipulation (seed is still set)
+                manip_random = random.random()
+                
                 if should_go_up:
                     # Need price to be slightly ABOVE entry
                     target_price = entry_price + min_profit_diff
@@ -5829,7 +5832,7 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                         change = min(volatility * 1.2, target_price - base_price + volatility * 0.3)
                     else:
                         # Already above entry, just add small positive movement
-                        change = abs(random.random() * volatility * 0.8)
+                        change = abs(manip_random * volatility * 0.8)
                 else:
                     # Need price to be slightly BELOW entry
                     target_price = entry_price - min_profit_diff
@@ -5838,7 +5841,7 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                         change = -min(volatility * 1.2, base_price - target_price + volatility * 0.3)
                     else:
                         # Already below entry, just add small negative movement
-                        change = -abs(random.random() * volatility * 0.8)
+                        change = -abs(manip_random * volatility * 0.8)
     
     # Create new tick with deterministic values (while seed is still set)
     high_offset = abs((random.random() - 0.5) * volatility * 0.3)
