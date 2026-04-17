@@ -5527,16 +5527,17 @@ def generate_server_chart_data(symbol: str) -> list:
     
     price = base_price
     
-    # Generate 2592000 ticks (30 days of 1-second data)
-    # 30 days × 24 hours × 60 minutes × 60 seconds = 2,592,000 ticks
+    # Generate 604800 ticks (7 days of 1-second data)
+    # 7 days × 24 hours × 60 minutes × 60 seconds = 604,800 ticks
     # This gives us:
-    # - 43,200 candles at 1m interval
-    # - 8,640 candles at 5m interval
-    # - 2,880 candles at 15m interval  
-    # - 1,440 candles at 30m interval
-    # - 720 candles at 1h interval
-    # - 180 candles at 4h interval
-    TOTAL_TICKS = 2592000  # 30 days
+    # - 10,080 candles at 1m interval
+    # - 2,016 candles at 5m interval
+    # - 672 candles at 15m interval  
+    # - 336 candles at 30m interval
+    # - 168 candles at 1h interval
+    # - 42 candles at 4h interval
+    # This is enough for smooth charts while loading 4x faster
+    TOTAL_TICKS = 604800  # 7 days
     
     # Generate ticks from (now - TOTAL_TICKS) to (now - 1)
     # The last tick is 1 second ago, so real-time tick at 'now' will update current candle
