@@ -5506,14 +5506,13 @@ def get_base_price(symbol: str) -> float:
     
     return 1.0850
 
-def generate_server_chart_data(symbol: str, days: int = 3) -> list:
+def generate_server_chart_data(symbol: str, days: int = 1) -> list:
     """Generate chart data on the server (consistent across all devices)
     
     POCKET OPTION STYLE:
-    - BIGGER candles with natural varied heights
+    - Normal sized candles (not too big, not too small)
     - Smooth gradual movement - NO sudden big jumps
-    - Natural wave-like patterns - not straight lines up/down
-    - Previous candle size influences new candle size (balance)
+    - Fast loading (1 day default for speed)
     """
     import hashlib
     import math
@@ -5531,12 +5530,11 @@ def generate_server_chart_data(symbol: str, days: int = 3) -> list:
     # Calculate total ticks based on requested days
     TOTAL_TICKS = days * 24 * 60 * 60
     
-    # BIGGER volatility for visible candles (3x previous)
-    # This makes candles more visible on the chart
-    volatility = base_price * 0.00006  # Increased from 0.000015
+    # NORMAL volatility - not too big, not too small
+    # This creates natural looking candles like Pocket Option
+    volatility = base_price * 0.00002  # Reduced from 0.00006 for normal candles
     
     # Track for smooth movement
-    current_trend = 0
     prev_change = 0  # Track previous change for smoothness
     
     for i in range(TOTAL_TICKS, 0, -1):
@@ -5547,51 +5545,51 @@ def generate_server_chart_data(symbol: str, days: int = 3) -> list:
         # Long-term trend (changes every 3-5 minutes for smooth waves)
         long_cycle = tick_time // 180  # 3 minute cycles
         random.seed(seed + long_cycle)
-        long_trend = (random.random() - 0.5) * 0.8  # -0.4 to 0.4
+        long_trend = (random.random() - 0.5) * 0.6  # -0.3 to 0.3
         
         # Medium trend (60 second cycles)
         medium_cycle = tick_time // 60
         random.seed(seed + medium_cycle + 1000)
-        medium_trend = (random.random() - 0.5) * 0.6  # -0.3 to 0.3
+        medium_trend = (random.random() - 0.5) * 0.4  # -0.2 to 0.2
         
         # Short wave for micro-movement (15 second smooth wave)
         short_position = (tick_time % 15) / 15.0
-        short_wave = math.sin(short_position * math.pi * 2) * 0.4
+        short_wave = math.sin(short_position * math.pi * 2) * 0.3
         
         # Combine for smooth direction
         direction = long_trend * 0.4 + medium_trend * 0.3 + short_wave * 0.3
         
         # SMOOTH transition from previous change (key for no jumping)
-        # 70% of previous + 30% of new = smooth transition
-        smooth_direction = prev_change * 0.7 + direction * 0.3
+        # 85% of previous + 15% of new = ultra smooth transition
+        smooth_direction = prev_change * 0.85 + direction * 0.15
         
         # Small random noise
         random.seed(seed + tick_time)
-        noise = (random.random() - 0.5) * 0.15
+        noise = (random.random() - 0.5) * 0.1
         
         # Final change - smooth and gradual
-        change = smooth_direction * volatility + noise * volatility * 0.2
+        change = smooth_direction * volatility + noise * volatility * 0.15
         prev_change = smooth_direction  # Store for next iteration
         
         # Gentle mean reversion (prevents drifting too far)
-        mean_reversion = (base_price - price) * 0.0001
+        mean_reversion = (base_price - price) * 0.00015
         change += mean_reversion
         
         open_price = price
         close_price = open_price + change
         
-        # Price boundaries (±1.5% for tighter control)
-        max_price = base_price * 1.015
-        min_price = base_price * 0.985
+        # Price boundaries (±1% for tight control)
+        max_price = base_price * 1.01
+        min_price = base_price * 0.99
         close_price = max(min_price, min(max_price, close_price))
         
-        # BIGGER candle wicks for visibility
+        # Normal candle wicks (proportional to body)
         body_size = abs(close_price - open_price)
         random.seed(seed + tick_time + 5000)
-        wick_multiplier = 0.5 + random.random() * 0.8  # 0.5 to 1.3
+        wick_multiplier = 0.3 + random.random() * 0.5  # 0.3 to 0.8
         
         # Wicks proportional to body for natural look
-        wick_size = max(body_size * wick_multiplier, volatility * 0.3)
+        wick_size = max(body_size * wick_multiplier, volatility * 0.2)
         high_price = max(open_price, close_price) + wick_size
         low_price = min(open_price, close_price) - wick_size
         
@@ -5609,12 +5607,12 @@ def generate_server_chart_data(symbol: str, days: int = 3) -> list:
         
         price = close_price
     
-    # Add final tick at current timestamp
+    # Add final tick at current timestamp (SAME SIZE as others, no big candle)
     ticks.append({
         "time": now,
         "open": round(price, 6),
-        "high": round(price + volatility * 0.3, 6),
-        "low": round(price - volatility * 0.3, 6),
+        "high": round(price + volatility * 0.2, 6),
+        "low": round(price - volatility * 0.2, 6),
         "close": round(price, 6)
     })
     
@@ -5836,8 +5834,8 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     
     base_price = last_tick["close"]
     
-    # BIGGER volatility matching historical (3x previous)
-    volatility = base_price * 0.00006  # Matching historical
+    # NORMAL volatility - matching historical for consistency
+    volatility = base_price * 0.00002  # Same as historical
     
     # ========== POCKET OPTION STYLE - ULTRA SMOOTH MOVEMENT ==========
     # Track previous tick's change for smooth continuation
@@ -5847,31 +5845,31 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     # Long-term trend (3 minute cycles)
     long_cycle = now // 180
     random.seed(hash(symbol_key) + long_cycle)
-    long_trend = (random.random() - 0.5) * 0.8
+    long_trend = (random.random() - 0.5) * 0.6
     
     # Medium trend (60 second cycles)
     medium_cycle = now // 60
     random.seed(hash(symbol_key) + medium_cycle + 1000)
-    medium_trend = (random.random() - 0.5) * 0.6
+    medium_trend = (random.random() - 0.5) * 0.4
     
     # Short wave (15 second smooth sine wave)
     short_position = (now % 15) / 15.0
-    short_wave = math.sin(short_position * math.pi * 2) * 0.4
+    short_wave = math.sin(short_position * math.pi * 2) * 0.3
     
     # Combine movements
     direction = long_trend * 0.4 + medium_trend * 0.3 + short_wave * 0.3
     
-    # CRITICAL: Smooth transition from previous movement
-    # This prevents jumping - 80% previous momentum + 20% new direction
-    smooth_factor = 0.8
+    # CRITICAL: Ultra smooth transition from previous movement
+    # 90% previous momentum + 10% new direction = micro-smooth movement
+    smooth_factor = 0.9
     smooth_direction = (prev_change / volatility) * smooth_factor + direction * (1 - smooth_factor) if volatility > 0 else direction
     
     # Small noise for realism
     random.seed(now + hash(symbol_key) + 12345)
-    noise = (random.random() - 0.5) * 0.1
+    noise = (random.random() - 0.5) * 0.08
     
-    # Final change - smooth and gradual
-    change = smooth_direction * volatility * 0.3 + noise * volatility * 0.1
+    # Final change - very smooth and gradual
+    change = smooth_direction * volatility * 0.2 + noise * volatility * 0.05
     
     # ========== SUBTLE MARKET MANIPULATION - UNDETECTABLE ==========
     # Price manipulation happens GRADUALLY over last 10 seconds, not sudden jumps
