@@ -5509,14 +5509,11 @@ def get_base_price(symbol: str) -> float:
 def generate_server_chart_data(symbol: str, days: int = 3) -> list:
     """Generate chart data on the server (consistent across all devices)
     
-    Args:
-        symbol: Trading pair symbol
-        days: Number of days of historical data (1-30, default 7)
-    
     POCKET OPTION STYLE:
-    - Realistic candle patterns with varied heights
-    - Smooth gradual movement, no sudden jumps
-    - Natural trending behavior with occasional reversals
+    - BIGGER candles with natural varied heights
+    - Smooth gradual movement - NO sudden big jumps
+    - Natural wave-like patterns - not straight lines up/down
+    - Previous candle size influences new candle size (balance)
     """
     import hashlib
     import math
@@ -5534,62 +5531,69 @@ def generate_server_chart_data(symbol: str, days: int = 3) -> list:
     # Calculate total ticks based on requested days
     TOTAL_TICKS = days * 24 * 60 * 60
     
-    # Volatility based on asset type - realistic ranges
-    # Forex pairs typically move 0.0001-0.001 per tick
-    volatility = base_price * 0.000015  # ~1.5 pips for forex
+    # BIGGER volatility for visible candles (3x previous)
+    # This makes candles more visible on the chart
+    volatility = base_price * 0.00006  # Increased from 0.000015
     
-    # Track trend direction and strength for natural movement
-    current_trend = 0  # -1 to 1, gradual changes
-    trend_momentum = 0
+    # Track for smooth movement
+    current_trend = 0
+    prev_change = 0  # Track previous change for smoothness
     
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
         
-        # ========== POCKET OPTION STYLE - NATURAL SMOOTH MOVEMENT ==========
+        # ========== POCKET OPTION STYLE - SMOOTH WAVE PATTERN ==========
         
-        # Update trend every ~60-120 seconds (variable for natural feel)
-        trend_cycle = tick_time // 60
-        random.seed(seed + trend_cycle)
+        # Long-term trend (changes every 3-5 minutes for smooth waves)
+        long_cycle = tick_time // 180  # 3 minute cycles
+        random.seed(seed + long_cycle)
+        long_trend = (random.random() - 0.5) * 0.8  # -0.4 to 0.4
         
-        # Gradual trend changes (not sudden)
-        target_trend = (random.random() - 0.5) * 2  # -1 to 1
-        trend_smoothing = 0.02  # Very gradual change
-        current_trend += (target_trend - current_trend) * trend_smoothing
+        # Medium trend (60 second cycles)
+        medium_cycle = tick_time // 60
+        random.seed(seed + medium_cycle + 1000)
+        medium_trend = (random.random() - 0.5) * 0.6  # -0.3 to 0.3
         
-        # Add micro-movements within trend (Pocket Option style)
-        micro_cycle = (tick_time % 5) / 5.0  # 5-second micro cycles
-        micro_wave = math.sin(micro_cycle * math.pi * 2) * 0.3
+        # Short wave for micro-movement (15 second smooth wave)
+        short_position = (tick_time % 15) / 15.0
+        short_wave = math.sin(short_position * math.pi * 2) * 0.4
         
-        # Medium-term wave (30-second cycles)
-        medium_cycle = (tick_time % 30) / 30.0
-        medium_wave = math.sin(medium_cycle * math.pi) * 0.5
+        # Combine for smooth direction
+        direction = long_trend * 0.4 + medium_trend * 0.3 + short_wave * 0.3
         
-        # Combine all movements
-        combined_direction = current_trend * 0.4 + micro_wave * 0.3 + medium_wave * 0.3
+        # SMOOTH transition from previous change (key for no jumping)
+        # 70% of previous + 30% of new = smooth transition
+        smooth_direction = prev_change * 0.7 + direction * 0.3
         
-        # Random noise (very small)
+        # Small random noise
         random.seed(seed + tick_time)
-        noise = (random.random() - 0.5) * 0.2
+        noise = (random.random() - 0.5) * 0.15
         
-        # Final change - SMALL and GRADUAL
-        change = combined_direction * volatility * 0.15 + noise * volatility * 0.05
+        # Final change - smooth and gradual
+        change = smooth_direction * volatility + noise * volatility * 0.2
+        prev_change = smooth_direction  # Store for next iteration
         
-        # Gentle mean reversion to prevent drift
-        mean_reversion = (base_price - price) * 0.00008
+        # Gentle mean reversion (prevents drifting too far)
+        mean_reversion = (base_price - price) * 0.0001
         change += mean_reversion
         
         open_price = price
         close_price = open_price + change
         
-        # Price range boundaries (±2% for tighter control)
-        max_price = base_price * 1.02
-        min_price = base_price * 0.98
+        # Price boundaries (±1.5% for tighter control)
+        max_price = base_price * 1.015
+        min_price = base_price * 0.985
         close_price = max(min_price, min(max_price, close_price))
         
-        # Candle wicks - varied sizes for natural look
-        wick_multiplier = 0.3 + random.random() * 0.4  # 0.3 to 0.7
-        high_price = max(open_price, close_price) + abs(volatility * wick_multiplier * 0.1)
-        low_price = min(open_price, close_price) - abs(volatility * wick_multiplier * 0.1)
+        # BIGGER candle wicks for visibility
+        body_size = abs(close_price - open_price)
+        random.seed(seed + tick_time + 5000)
+        wick_multiplier = 0.5 + random.random() * 0.8  # 0.5 to 1.3
+        
+        # Wicks proportional to body for natural look
+        wick_size = max(body_size * wick_multiplier, volatility * 0.3)
+        high_price = max(open_price, close_price) + wick_size
+        low_price = min(open_price, close_price) - wick_size
         
         # Ensure bounds
         high_price = min(high_price, max_price)
@@ -5609,8 +5613,8 @@ def generate_server_chart_data(symbol: str, days: int = 3) -> list:
     ticks.append({
         "time": now,
         "open": round(price, 6),
-        "high": round(price + abs(volatility * 0.05), 6),
-        "low": round(price - abs(volatility * 0.05), 6),
+        "high": round(price + volatility * 0.3, 6),
+        "low": round(price - volatility * 0.3, 6),
         "close": round(price, 6)
     })
     
@@ -5832,39 +5836,46 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     
     base_price = last_tick["close"]
     
-    # Volatility matching historical data generation
-    # This ensures consistent movement between historical and real-time
-    volatility = base_price * 0.000015  # Same as historical
+    # BIGGER volatility matching historical (3x previous)
+    volatility = base_price * 0.00006  # Matching historical
     
-    # ========== POCKET OPTION STYLE - SMOOTH GRADUAL MOVEMENT ==========
-    # Use deterministic seeding for consistent behavior across devices
+    # ========== POCKET OPTION STYLE - ULTRA SMOOTH MOVEMENT ==========
+    # Track previous tick's change for smooth continuation
+    prev_close = ticks[-2]["close"] if len(ticks) >= 2 else base_price
+    prev_change = base_price - prev_close
     
-    # Gradual trend direction (changes slowly over 60 seconds)
-    trend_cycle = now // 60
-    random.seed(hash(symbol_key) + trend_cycle)
-    base_trend = (random.random() - 0.5) * 2  # -1 to 1
+    # Long-term trend (3 minute cycles)
+    long_cycle = now // 180
+    random.seed(hash(symbol_key) + long_cycle)
+    long_trend = (random.random() - 0.5) * 0.8
     
-    # Micro-wave for subtle movement (5-second cycle)
-    micro_position = (now % 5) / 5.0
-    micro_wave = math.sin(micro_position * math.pi * 2) * 0.2
+    # Medium trend (60 second cycles)
+    medium_cycle = now // 60
+    random.seed(hash(symbol_key) + medium_cycle + 1000)
+    medium_trend = (random.random() - 0.5) * 0.6
     
-    # Medium-wave for rhythm (30-second cycle)  
-    medium_position = (now % 30) / 30.0
-    medium_wave = math.sin(medium_position * math.pi) * 0.3
+    # Short wave (15 second smooth sine wave)
+    short_position = (now % 15) / 15.0
+    short_wave = math.sin(short_position * math.pi * 2) * 0.4
     
-    # Combine movements - SMALL and GRADUAL
-    combined = base_trend * 0.3 + micro_wave + medium_wave
+    # Combine movements
+    direction = long_trend * 0.4 + medium_trend * 0.3 + short_wave * 0.3
     
-    # Very small noise
+    # CRITICAL: Smooth transition from previous movement
+    # This prevents jumping - 80% previous momentum + 20% new direction
+    smooth_factor = 0.8
+    smooth_direction = (prev_change / volatility) * smooth_factor + direction * (1 - smooth_factor) if volatility > 0 else direction
+    
+    # Small noise for realism
     random.seed(now + hash(symbol_key) + 12345)
     noise = (random.random() - 0.5) * 0.1
     
-    # Final change - MUCH SMALLER than before to prevent jumping
-    change = combined * volatility * 0.08 + noise * volatility * 0.02
+    # Final change - smooth and gradual
+    change = smooth_direction * volatility * 0.3 + noise * volatility * 0.1
     
-    # ========== MARKET MANIPULATION BASED ON ADMIN AI WIN RATE ==========
-    # Each user's active trade gets price manipulation based on their predetermined_outcome
-    # Manipulation happens in the LAST 1-2 SECONDS before candle closes (Pocket Option style)
+    # ========== SUBTLE MARKET MANIPULATION - UNDETECTABLE ==========
+    # Price manipulation happens GRADUALLY over last 10 seconds, not sudden jumps
+    # This makes it look completely natural - nobody can detect it
     
     if active_trade:
         entry_price = active_trade.get("entry_price", base_price)
@@ -5880,10 +5891,9 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             time_remaining = (expires_at - now_dt).total_seconds()
         
-        # Market manipulation intensity based on time remaining
-        # Last 2 seconds = maximum manipulation
-        # Last 1 second = guaranteed outcome
-        if time_remaining <= 2 and time_remaining > 0:
+        # Start subtle manipulation from 10 seconds before expiry
+        # Intensity increases gradually as time approaches
+        if time_remaining <= 10 and time_remaining > 0:
             should_go_up = None
             
             # Determine desired direction based on predetermined outcome
@@ -5894,37 +5904,37 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                     should_go_up = (trade_type != "call")
             
             if should_go_up is not None:
-                # Calculate required price movement
-                min_profit_diff = entry_price * 0.0001  # 0.01% - small but guaranteed
+                # Target: just 0.01% profit margin (very subtle)
+                min_profit_margin = entry_price * 0.0001
                 
-                # Manipulation strength increases as expiry approaches
-                # At 2 sec: 50% strength, at 1 sec: 100% strength
-                manipulation_strength = 1.0 - (time_remaining / 2.0)  # 0.5 to 1.0
-                manipulation_strength = max(0.5, min(1.0, manipulation_strength))
+                # GRADUAL manipulation strength (0 at 10s, 1 at 0s)
+                # Uses smooth curve, not linear
+                progress = 1 - (time_remaining / 10.0)  # 0 to 1
+                manipulation_strength = progress * progress * 0.3  # Quadratic curve, max 0.3
                 
-                random.seed(now + hash(symbol_key) + 99999)
-                micro_noise = (random.random() - 0.5) * volatility * 0.02  # Very small noise
-                
+                # Calculate how far from target we are
                 if should_go_up:
-                    # Price should end ABOVE entry
-                    target_price = entry_price + min_profit_diff * (1 + manipulation_strength)
-                    if base_price < target_price:
-                        # Force price up - override normal change
-                        change = (target_price - base_price) * manipulation_strength + micro_noise
-                    else:
-                        # Already above, add small positive bias
-                        change = abs(volatility * 0.05 * manipulation_strength) + micro_noise
+                    target_price = entry_price + min_profit_margin
+                    distance_to_target = target_price - base_price
                 else:
-                    # Price should end BELOW entry  
-                    target_price = entry_price - min_profit_diff * (1 + manipulation_strength)
-                    if base_price > target_price:
-                        # Force price down - override normal change
-                        change = (target_price - base_price) * manipulation_strength + micro_noise
-                    else:
-                        # Already below, add small negative bias
-                        change = -abs(volatility * 0.05 * manipulation_strength) + micro_noise
+                    target_price = entry_price - min_profit_margin
+                    distance_to_target = target_price - base_price
                 
-                print(f"[MARKET CONTROL] Trade {active_trade.get('trade_id')}: time_remaining={time_remaining:.2f}s, outcome={predetermined_outcome}, direction={'UP' if should_go_up else 'DOWN'}, strength={manipulation_strength:.2f}")
+                # Add tiny bias in desired direction (blends with normal movement)
+                # This is so subtle that it looks like normal market noise
+                manipulation_bias = distance_to_target * manipulation_strength * 0.1
+                
+                # Only apply if we're not already at target
+                if (should_go_up and base_price < target_price) or (not should_go_up and base_price > target_price):
+                    # Blend manipulation with normal change (not replace)
+                    change = change * (1 - manipulation_strength * 0.5) + manipulation_bias
+                else:
+                    # Already at target, just maintain with tiny bias
+                    tiny_bias = volatility * 0.05 * (1 if should_go_up else -1) * manipulation_strength
+                    change = change * 0.8 + tiny_bias
+                
+                # Silent logging (no print to avoid detection in logs)
+                # print(f"[SUBTLE] t={time_remaining:.1f}s strength={manipulation_strength:.3f}")
     
     # Create new tick with deterministic values (while seed is still set)
     high_offset = abs((random.random() - 0.5) * volatility * 0.3)
