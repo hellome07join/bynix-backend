@@ -5781,7 +5781,7 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     random.seed(now + hash(symbol_key))
     
     base_price = last_tick["close"]
-    volatility = base_price * 0.00008
+    volatility = base_price * 0.00003  # Reduced for smoother, more realistic candles
     
     # Default random change
     change = (random.random() - 0.5) * volatility * 2
@@ -5840,16 +5840,20 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
                         # Already below entry, just add small negative movement
                         change = -abs(random.random() * volatility * 0.8)
     
-    # Reset random seed
-    random.seed()
+    # Create new tick with deterministic values (while seed is still set)
+    high_offset = abs((random.random() - 0.5) * volatility * 0.3)
+    low_offset = abs((random.random() - 0.5) * volatility * 0.3)
     
     new_tick = {
         "time": now,
         "open": round(base_price, 6),
-        "high": round(max(base_price, base_price + change) + abs(random.random() * volatility * 0.5), 6),
-        "low": round(min(base_price, base_price + change) - abs(random.random() * volatility * 0.5), 6),
+        "high": round(max(base_price, base_price + change) + high_offset, 6),
+        "low": round(min(base_price, base_price + change) - low_offset, 6),
         "close": round(base_price + change, 6)
     }
+    
+    # Reset random seed AFTER creating the tick
+    random.seed()
     
     ticks.append(new_tick)
     
