@@ -5537,44 +5537,34 @@ def generate_server_chart_data(symbol: str, days: int = 7) -> list:
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
         
-        # ========== POCKET OPTION STYLE WITH VARIED PATTERNS ==========
-        volatility = base_price * 0.000004  # Smooth movement
+        # ========== ULTRA SLOW SMOOTH MOVEMENT (Pocket Option Style) ==========
+        volatility = base_price * 0.0000006  # ULTRA TINY - almost imperceptible per tick
         
         tick_second = tick_time % 86400  # Seconds since midnight
         
-        # Use symbol-based offset for different patterns per asset
-        symbol_offset = seed % 1000
-        
-        # Multiple sine waves with VARYING amplitudes (not fixed)
-        # Random amplitude multiplier changes every ~60 seconds for variety
-        amplitude_cycle = (tick_time // 60) % 100
+        # Very slow amplitude changes
+        amplitude_cycle = (tick_time // 180) % 100  # Changes every 3 minutes
         random.seed(seed + amplitude_cycle)
-        amp_variation = 0.5 + random.random()  # 0.5 to 1.5x amplitude variation
+        amp_variation = 0.7 + random.random() * 0.6
         
-        # Different phase offsets create unique patterns for each cycle
-        phase_shift = (tick_time // 30) * 0.5 + symbol_offset
+        # Slow phase shifts
+        phase_shift = (tick_time // 90) * 0.15 + (seed % 500)
         
-        fast_wave = math.sin((tick_second * 0.15) + phase_shift) * 0.35 * amp_variation
-        medium_wave = math.sin((tick_second * 0.05) + phase_shift * 0.7) * 0.4 * (2 - amp_variation)
-        slow_wave = math.sin((tick_second * 0.015) + phase_shift * 0.3) * 0.25
+        # ULTRA SLOW wave frequencies (creates very gradual movement)
+        fast_wave = math.sin((tick_second * 0.008) + phase_shift) * 0.3 * amp_variation
+        medium_wave = math.sin((tick_second * 0.003) + phase_shift * 0.4) * 0.4 * (1.4 - amp_variation * 0.25)
+        slow_wave = math.sin((tick_second * 0.0008) + phase_shift * 0.15) * 0.3
         
-        # Add irregular "pulse" movements every few minutes
-        pulse_cycle = tick_time % 180  # Every 3 minutes
-        if pulse_cycle < 10:
-            pulse = math.sin(pulse_cycle * 0.3) * 0.3 * (random.random() + 0.5)
-        else:
-            pulse = 0
+        # Combine for ultra smooth directional movement
+        trend_direction = fast_wave + medium_wave + slow_wave
         
-        # Combine for varied directional movement
-        trend_direction = fast_wave + medium_wave + slow_wave + pulse
+        # Mean reversion keeps price stable
+        mean_reversion = (base_price - price) * 0.0005
+        change = (trend_direction * volatility * 1.5) + mean_reversion
         
-        # Mean reversion keeps price within range
-        mean_reversion = (base_price - price) * 0.001
-        change = (trend_direction * volatility * 3) + mean_reversion
-        
-        # Small random noise for natural look
+        # Tiny noise
         random.seed(seed + tick_time)
-        noise = (random.random() - 0.5) * volatility * 0.2
+        noise = (random.random() - 0.5) * volatility * 0.08
         change += noise
         
         open_price = price
@@ -5832,36 +5822,34 @@ async def add_chart_tick(symbol: str, authorization: Optional[str] = Header(None
     random.seed(now + hash(symbol_key))
     
     base_price = last_tick["close"]
-    volatility = base_price * 0.000004
+    volatility = base_price * 0.0000008  # ULTRA TINY volatility - 0.00008%
     
-    # ========== POCKET OPTION STYLE WITH VARIED PATTERNS ==========
+    # ========== ULTRA SLOW SMOOTH MOVEMENT (Pocket Option Style) ==========
     current_second = now % 86400  # Seconds since midnight
     
-    # Varying amplitude creates different wave heights
-    amplitude_cycle = (now // 45) % 100  # Changes every 45 seconds
+    # Very slow amplitude changes (every 3-5 minutes)
+    amplitude_cycle = (now // 200) % 100
     random.seed(hash(symbol_key) + amplitude_cycle)
-    amp_variation = 0.6 + random.random() * 0.8  # 0.6 to 1.4x amplitude
+    amp_variation = 0.7 + random.random() * 0.6  # 0.7 to 1.3x amplitude
     
-    # Phase shifts create unique patterns
-    phase_shift = (now // 25) * 0.4 + (hash(symbol_key) % 500)
+    # Slow phase shifts
+    phase_shift = (now // 100) * 0.2 + (hash(symbol_key) % 500)
     
-    fast_wave = math.sin((current_second * 0.18) + phase_shift) * 0.35 * amp_variation
-    medium_wave = math.sin((current_second * 0.055) + phase_shift * 0.6) * 0.4 * (1.8 - amp_variation * 0.5)
-    slow_wave = math.sin((current_second * 0.018) + phase_shift * 0.25) * 0.25
+    # ULTRA SLOW wave frequencies (10x slower than before)
+    # These create very gradual, smooth movement
+    fast_wave = math.sin((current_second * 0.012) + phase_shift) * 0.3 * amp_variation
+    medium_wave = math.sin((current_second * 0.004) + phase_shift * 0.5) * 0.4 * (1.5 - amp_variation * 0.3)
+    slow_wave = math.sin((current_second * 0.001) + phase_shift * 0.2) * 0.3
     
-    # Occasional pulse for variety
-    pulse_cycle = now % 120
-    pulse = math.sin(pulse_cycle * 0.25) * 0.15 if pulse_cycle < 8 else 0
+    # Combine waves - very smooth directional movement
+    combined_direction = fast_wave + medium_wave + slow_wave
     
-    # Combine all waves for varied natural movement
-    combined_direction = fast_wave + medium_wave + slow_wave + pulse
+    # Ultra small change for smooth appearance
+    change = combined_direction * volatility * 2
     
-    # Apply smooth change in the trending direction
-    change = combined_direction * volatility * 3.5
-    
-    # Small random noise for natural look
+    # Tiny noise for natural micro-movement
     random.seed(now + hash(symbol_key))
-    noise = (random.random() - 0.5) * volatility * 0.15
+    noise = (random.random() - 0.5) * volatility * 0.1
     change += noise
     
     # ========== PER-USER PRICE MANIPULATION ==========
