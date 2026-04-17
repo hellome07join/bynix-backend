@@ -5538,6 +5538,8 @@ def generate_server_chart_data(symbol: str) -> list:
     # - 180 candles at 4h interval
     TOTAL_TICKS = 2592000  # 30 days
     
+    # Generate ticks from (now - TOTAL_TICKS) to (now - 1)
+    # The last tick is 1 second ago, so real-time tick at 'now' will update current candle
     for i in range(TOTAL_TICKS, 0, -1):
         tick_time = now - i
         
@@ -5572,6 +5574,15 @@ def generate_server_chart_data(symbol: str) -> list:
         })
         
         price = close_price
+    
+    # Add final tick at current timestamp to ensure current candle exists
+    ticks.append({
+        "time": now,
+        "open": round(price, 6),
+        "high": round(price + abs((random.random() - 0.5) * volatility * 0.3), 6),
+        "low": round(price - abs((random.random() - 0.5) * volatility * 0.3), 6),
+        "close": round(price, 6)
+    })
     
     # Reset random seed
     random.seed()
